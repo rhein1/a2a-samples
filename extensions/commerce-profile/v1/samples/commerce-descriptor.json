@@ -2,6 +2,9 @@
     "protocol": "acp",
     "protocolVersion": "0.1.0",
     "serviceId": "paid_translation.v1",
+    "termsId": "terms-demo-001",
+    "issuedAt": "2026-06-12T18:00:00Z",
+    "validUntil": "2026-06-12T18:05:00Z",
     "agentCardUrl": "https://seller.example.com/.well-known/agent-card.json",
     "capability": {
         "id": "translate_text",

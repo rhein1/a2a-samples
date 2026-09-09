@@ -3,6 +3,7 @@
 - **URI:** `https://github.com/a2aproject/a2a-samples/extensions/commerce-profile/v1`
 - **Type:** Profile Extension / Metadata Extension
 - **Version:** 0.1.0
+- **A2A version:** 1.0
 
 ## Abstract
 
@@ -14,9 +15,12 @@ The profile does not replace A2A messaging, discovery, authentication, or task
 state. It only standardizes the points where commerce metadata can be declared,
 attached, and reconciled.
 
+The bundled fixtures are illustrative and offline. Their proof and receipt are
+explicitly simulated and provide no evidence of payment or settlement.
+
 ## Goals
 
-- Keep the normal A2A `message/send` flow unchanged.
+- Keep the normal A2A `SendMessage` flow unchanged.
 - Advertise commerce support through `AgentCapabilities.extensions`.
 - Resolve dynamic pricing and settlement terms from a descriptor URL.
 - Carry payment proof in A2A message metadata.
@@ -48,6 +52,8 @@ An agent that supports this profile SHOULD declare it in the Agent Card
 The `descriptorUrl` points to the current commerce descriptor for the service.
 The descriptor MAY use an Agoragentic Commerce Protocol (ACP) shape or another
 provider-specific schema. A buyer MUST treat the descriptor as untrusted input.
+The surrounding Agent Card MUST declare its A2A 1.0 endpoint through
+`supportedInterfaces`; see the sample Agent Card for the complete declaration.
 
 ## 2. Commerce Descriptor
 
@@ -60,6 +66,7 @@ The descriptor SHOULD include:
 | Field          | Required | Description                                      |
 | -------------- | -------- | ------------------------------------------------ |
 | `serviceId`    | Yes      | Stable identifier for the paid capability.       |
+| `termsId`      | Yes      | Stable identifier for this exact terms revision. |
 | `agentCardUrl` | Yes      | URL of the seller's Agent Card.                  |
 | `capability`   | Yes      | Capability id and compatible input/output modes. |
 | `pricing`      | Yes      | Pricing model, currency, and amount.             |
@@ -69,6 +76,9 @@ The descriptor SHOULD include:
 The `v1/samples/commerce-descriptor.json` fixture shows one ACP-style
 descriptor. Other descriptor schemas can be used if both buyer and seller agree
 on the contract.
+
+Terms SHOULD have a bounded validity interval. A proof MUST bind the exact
+`termsId`; sellers MUST reject expired terms or a proof for another revision.
 
 ## 3. Payment Proof Metadata
 
@@ -83,6 +93,9 @@ The value SHOULD include:
 | Field              | Req | Description                                 |
 | ------------------ | --- | ------------------------------------------- |
 | `serviceId`        | Yes | Service identifier from the descriptor.     |
+| `termsId`          | Yes | Exact descriptor terms revision.            |
+| `requestId`        | Yes | JSON-RPC request identifier.                |
+| `messageId`        | Yes | A2A message identifier.                     |
 | `settlementMethod` | Yes | Settlement method used by the buyer.        |
 | `proofType`        | Yes | Proof type, e.g. `x402-payment-header`.     |
 | `proof`            | Yes | Provider-specific proof token or reference. |
@@ -91,7 +104,13 @@ The value SHOULD include:
 
 Sellers MUST validate the payment proof before executing paid work. Buyers and
 sellers SHOULD bind the proof to the requested `serviceId`, amount, and
-request identity to prevent proof replay.
+request and message identities to prevent proof replay. A proof that is valid
+for one request MUST NOT authorize another request.
+
+For JSON-RPC over HTTP, a client opts in with the service parameters
+`A2A-Version: 1.0` and `A2A-Extensions: <extension URI>`. The message also lists
+the extension URI in its `extensions` field. The sample request uses the A2A 1.0
+`SendMessage` method and member-based text part representation.
 
 ## 4. Execution Flow
 
@@ -99,7 +118,7 @@ request identity to prevent proof replay.
 2. Buyer reads the Commerce Profile extension params.
 3. Buyer fetches the descriptor URL and evaluates terms.
 4. Buyer completes settlement or authorization out of band.
-5. Buyer sends a normal A2A `message/send` request.
+5. Buyer sends a normal A2A 1.0 `SendMessage` request.
 6. Buyer includes payment proof in message metadata.
 7. Seller validates proof and executes the paid capability.
 8. Seller returns or exposes a receipt identifier.
@@ -112,14 +131,18 @@ Receipts SHOULD include:
 
 - `receiptId`
 - `serviceId`
+- the exact `termsId` and request identifier
 - `taskId` or `contextId`
-- final task status
+- execution status, separately from settlement status
 - amount and currency
 - settlement method and proof reference
 - timestamps for authorization and completion
 
 Receipts SHOULD NOT expose raw payment credentials, private keys, card details,
-or reusable bearer tokens.
+or reusable bearer tokens. A receipt MAY carry a provider transaction reference
+or a one-way proof digest, but MUST NOT copy a bearer proof from the request.
+Simulated receipts MUST identify themselves and MUST NOT claim confirmed
+settlement.
 
 ## 6. Security Considerations
 
@@ -131,3 +154,8 @@ Payment proof SHOULD be short lived or nonce-bound. Sellers SHOULD reject proofs
 that do not match the descriptor terms, the requested capability, or the
 expected amount. Buyers SHOULD keep local receipt records so they can detect
 missing or inconsistent seller receipts.
+
+Descriptor and receipt URLs are remote input. Clients SHOULD enforce HTTPS,
+redirect, DNS, response-size, and content-type policy before fetching them.
+Implementations SHOULD normalize currency and amount representations before
+comparison and consume replay-protected proofs atomically.
